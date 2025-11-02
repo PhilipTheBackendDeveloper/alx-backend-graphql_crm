@@ -39,7 +39,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'graphene_django',  
     'crm',    
-    'django_filters',     
+    'django_filters',
+    'django_crontab',     
 ]
 GRAPHENE = {
     'SCHEMA': 'graphql_crm.schema.schema',
