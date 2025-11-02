@@ -1,66 +1,56 @@
 #!/usr/bin/env python3
-"""
-send_order_reminders.py
-This script queries pending orders (from the past 7 days)
-via GraphQL and logs reminders to /tmp/order_reminders_log.txt
-"""
-
+import os
+import sys
 import datetime
-import logging
 from gql import gql, Client
 from gql.transport.requests import RequestsHTTPTransport
 
-# Configure logging
+# Define constants
+GRAPHQL_ENDPOINT = "http://localhost:8000/graphql"
 LOG_FILE = "/tmp/order_reminders_log.txt"
-logging.basicConfig(filename=LOG_FILE, level=logging.INFO,
-                    format="%(asctime)s - %(message)s")
-
 
 def main():
-    # GraphQL endpoint
-    transport = RequestsHTTPTransport(
-        url="http://localhost:8000/graphql",
-        verify=False,
-        retries=3,
-    )
-    client = Client(transport=transport, fetch_schema_from_transport=True)
+    # Define time window (orders within last 7 days)
+    now = datetime.datetime.now()
+    seven_days_ago = now - datetime.timedelta(days=7)
 
-    # Calculate the date range for the last 7 days
-    today = datetime.date.today()
-    last_week = today - datetime.timedelta(days=7)
-
-    # GraphQL query
+    # Prepare GraphQL query
     query = gql("""
-    query GetRecentOrders($lastWeek: Date!, $today: Date!) {
-        orders(filter: { order_date_Gte: $lastWeek, order_date_Lte: $today }) {
-            id
-            customer {
-                email
+        query GetRecentOrders($startDate: DateTime!) {
+            orders(orderDate_Gte: $startDate) {
+                id
+                customer {
+                    email
+                }
             }
         }
-    }
     """)
 
-    variables = {"lastWeek": str(last_week), "today": str(today)}
+    # Configure GraphQL client
+    transport = RequestsHTTPTransport(url=GRAPHQL_ENDPOINT, verify=False)
+    client = Client(transport=transport, fetch_schema_from_transport=False)
 
     try:
+        # Execute query
+        variables = {"startDate": seven_days_ago.isoformat()}
         response = client.execute(query, variable_values=variables)
-        orders = response.get("orders", [])
 
-        if not orders:
-            logging.info("No recent orders found.")
-        else:
+        # Write results to log
+        with open(LOG_FILE, "a") as f:
+            timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+            orders = response.get("orders", [])
             for order in orders:
-                order_id = order.get("id")
-                customer_email = order.get("customer", {}).get("email")
-                logging.info(
-                    f"Reminder sent for Order ID {order_id} - Customer Email: {customer_email}")
+                order_id = order["id"]
+                email = order["customer"]["email"]
+                f.write(f"{timestamp} - Order ID: {order_id}, Customer: {email}\n")
 
         print("Order reminders processed!")
 
     except Exception as e:
-        logging.error(f"Error processing order reminders: {e}")
-        print(f"Error: {e}")
+        with open(LOG_FILE, "a") as f:
+            timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"{timestamp} - Error: {str(e)}\n")
+        print(f"Error processing reminders: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":

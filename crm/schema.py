@@ -7,7 +7,7 @@ from django.utils import timezone
 import re
 from .models import Customer, Product, Order
 from .filters import CustomerFilter, ProductFilter, OrderFilter
-
+from crm.models import Product
 
 # Object Types with Connection support
 class CustomerType(DjangoObjectType):
@@ -497,6 +497,27 @@ class Query(graphene.ObjectType):
         
         return queryset
 
+class UpdateLowStockProducts(graphene.Mutation):
+    updated_products = graphene.List(ProductType)
+    message = graphene.String()
+
+    def mutate(self, info):
+        from .models import Product
+
+        # Find products with stock < 10
+        low_stock_products = Product.objects.filter(stock__lt=10)
+        updated_list = []
+
+        for product in low_stock_products:
+            product.stock += 10  # restock
+            product.save()
+            updated_list.append(product)
+
+        return UpdateLowStockProducts(
+            updated_products=updated_list,
+            message=f"{len(updated_list)} products restocked successfully."
+        )
+
 
 # Mutations
 class Mutation(graphene.ObjectType):
@@ -504,7 +525,8 @@ class Mutation(graphene.ObjectType):
     bulk_create_customers = BulkCreateCustomers.Field()
     create_product = CreateProduct.Field()
     create_order = CreateOrder.Field()
-
+    update_low_stock_products = UpdateLowStockProducts.Field()
 
 # Schema
 schema = graphene.Schema(query=Query, mutation=Mutation)
+
